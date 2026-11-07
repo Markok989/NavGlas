@@ -5,6 +5,8 @@ import java.util.Locale
 enum class CommandAction {
     CALL,
     SEND_SMS,
+    READ_LAST_SMS,
+    REPEAT_COMPOSED_SMS,
     ANSWER_CALL,
     REJECT_CALL,
     SILENCE_CALL,
@@ -46,6 +48,7 @@ object VoiceCommandParser {
 
     private val callKeywords = listOf("pozovi", "okreni", "cuj se sa", "zovi", "pozovite")
     private val smsKeywords = listOf("posalji poruku", "napisi poruku", "pusti poruku", "baci sms", "poruku", "napisi", "posalji")
+    private val readLastSmsKeywords = listOf("procitaj ponovo", "procitaj opet", "ponovi poruku", "ponovi sms", "sta je pisalo", "procitaj poruku opet", "sta pise u poruci", "procitaj stigli sms")
     private val answerKeywords = listOf("javi se", "prihvati", "prihvati poziv", "alo", "javi")
     private val rejectKeywords = listOf("odbij", "odbij poziv", "prekini", "ne mogu sad")
     private val silenceKeywords = listOf("utisaj", "utisaj zvono", "zanemari")
@@ -82,7 +85,16 @@ object VoiceCommandParser {
             )
         }
 
-        // 2. SOS komanda
+        // 2. Ponovno čitanje pristigle poruke (READ_LAST_SMS)
+        if (readLastSmsKeywords.any { lowerInput.contains(it) }) {
+            return ParsedCommandResult(
+                action = CommandAction.READ_LAST_SMS,
+                confidence = ConfidenceLevel.HIGH,
+                spokenFeedback = "Proveravam poslednju pristiglu poruku."
+            )
+        }
+
+        // 3. SOS komanda
         if (sosKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.SEND_SOS,
@@ -91,7 +103,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 3. Provera lokacije (WHERE_AM_I)
+        // 4. Provera lokacije (WHERE_AM_I)
         if (locationKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.WHERE_AM_I,
@@ -100,7 +112,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 4. Provera vremena (WHAT_TIME)
+        // 5. Provera vremena (WHAT_TIME)
         if (timeKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.WHAT_TIME,
@@ -109,7 +121,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 5. Odgovor na poziv (ANSWER_CALL)
+        // 6. Odgovor na poziv (ANSWER_CALL)
         if (answerKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.ANSWER_CALL,
@@ -118,7 +130,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 6. Utišavanje zvona (SILENCE_CALL)
+        // 7. Utišavanje zvona (SILENCE_CALL)
         if (silenceKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.SILENCE_CALL,
@@ -127,7 +139,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 7. Odbijanje poziva (REJECT_CALL)
+        // 8. Odbijanje poziva (REJECT_CALL)
         if (rejectKeywords.any { lowerInput.contains(it) }) {
             return ParsedCommandResult(
                 action = CommandAction.REJECT_CALL,
@@ -136,7 +148,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 8. Slanje SMS poruke (SEND_SMS)
+        // 9. Slanje SMS poruke (SEND_SMS)
         val matchedSmsKeyword = smsKeywords.firstOrNull { lowerInput.contains(it) }
         if (matchedSmsKeyword != null) {
             val kwIndex = lowerInput.indexOf(matchedSmsKeyword)
@@ -157,10 +169,11 @@ object VoiceCommandParser {
 
             if (formattedMessage.isNullOrBlank()) {
                 return ParsedCommandResult(
-                    action = CommandAction.UNKNOWN,
+                    action = CommandAction.SEND_SMS,
                     contactName = resolvedName,
-                    confidence = ConfidenceLevel.LOW,
-                    spokenFeedback = "Poruka nema sadržaj. Koju poruku želite da pošaljete?"
+                    messageText = null,
+                    confidence = match.confidence,
+                    spokenFeedback = "Koju poruku želite da pošaljete za $resolvedName?"
                 )
             }
 
@@ -169,11 +182,11 @@ object VoiceCommandParser {
                 contactName = resolvedName,
                 messageText = formattedMessage,
                 confidence = match.confidence,
-                spokenFeedback = "Šaljem poruku za $resolvedName: $formattedMessage"
+                spokenFeedback = "Napisao sam poruku za $resolvedName: $formattedMessage"
             )
         }
 
-        // 9. Telefonski poziv (CALL)
+        // 10. Telefonski poziv (CALL)
         val matchedCallKeyword = callKeywords.firstOrNull { lowerInput.contains(it) }
         if (matchedCallKeyword != null) {
             val kwIndex = lowerInput.indexOf(matchedCallKeyword)
@@ -190,7 +203,7 @@ object VoiceCommandParser {
             )
         }
 
-        // 10. Brzi odgovori (QUICK_ETA)
+        // 11. Brzi odgovori (QUICK_ETA)
         if (lowerInput.contains("stizem") || lowerInput.contains("vozim")) {
             return ParsedCommandResult(
                 action = CommandAction.QUICK_ETA,

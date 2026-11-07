@@ -7,6 +7,7 @@ import android.location.Geocoder
 import android.location.LocationManager
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.telecom.TelecomManager
 import android.telephony.SmsManager
 import java.text.SimpleDateFormat
@@ -14,6 +15,47 @@ import java.util.Date
 import java.util.Locale
 
 object ActionExecutor {
+
+    private fun getSmsManager(context: Context): SmsManager {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun getBestLastKnownLocation(lm: LocationManager): android.location.Location? {
+        val providers = lm.getProviders(true)
+        var bestLocation: android.location.Location? = null
+        for (provider in providers) {
+            val l = try { lm.getLastKnownLocation(provider) } catch (e: Exception) { null } ?: continue
+            if (bestLocation == null || l.accuracy < bestLocation.accuracy) {
+                bestLocation = l
+            }
+        }
+        return bestLocation
+    }
+
+    /**
+     * Automatski vraća prikaz na aktivnu navigacionu aplikaciju (Google Maps, OsmAnd, Waze itd.) nakon završetka akcije.
+     */
+    fun returnToActiveNavApp(context: Context) {
+        val prefs = context.getSharedPreferences("NaviGlasPrefs", Context.MODE_PRIVATE)
+        val lastNav = prefs.getString("LAST_ACTIVE_NAV_PACKAGE", null)
+        if (!lastNav.isNullOrBlank()) {
+            try {
+                val intent = context.packageManager.getLaunchIntentForPackage(lastNav)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    context.startActivity(intent)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     /**
      * Izvršava determinističku sistemsku akciju iz prepoznate komande.
@@ -32,7 +74,7 @@ object ActionExecutor {
         when (command.action) {
             CommandAction.CALL -> {
                 val phoneNumber = contact?.phoneNumber ?: command.contactName
-                if (!phoneNumber.isNull_or_blank()) {
+                if (!phoneNumber.isNullOrBlank()) {
                     val intent = Intent(Intent.ACTION_CALL).apply {
                         data = Uri.parse("tel:$phoneNumber")
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -40,6 +82,7 @@ object ActionExecutor {
                     try {
                         context.startActivity(intent)
                         onResult("Pozivam ${contact?.name ?: phoneNumber}.")
+                        returnToActiveNavApp(context)
                     } catch (e: Exception) {
                         onResult("Greška pri pokretanju poziva.")
                     }
@@ -52,11 +95,12 @@ object ActionExecutor {
                 val phoneNumber = contact?.phoneNumber
                 val messageText = command.messageText
 
-                if (!phoneNumber.isNull_or_blank() && !messageText.isNull_or_blank()) {
+                if (!phoneNumber.isNullOrBlank() && !messageText.isNullOrBlank()) {
                     try {
-                        val smsManager = context.getSystemService(SmsManager::class.java)
+                        val smsManager = getSmsManager(context)
                         smsManager.sendTextMessage(phoneNumber, null, messageText, null, null)
                         onResult("Poruka uspešno poslata za ${contact?.name ?: phoneNumber}.")
+                        returnToActiveNavApp(context)
                     } catch (e: Exception) {
                         onResult("Greška pri slanju SMS poruke.")
                     }
@@ -68,8 +112,13 @@ object ActionExecutor {
             CommandAction.ANSWER_CALL -> {
                 try {
                     val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-                    telecomManager.acceptRingingCall()
-                    onResult("Poziv je prihvaćen.")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        telecomManager.acceptRingingCall()
+                        onResult("Poziv je prihvaćen.")
+                    } else {
+                        onResult("Prihvatanje poziva nije podržano na ovoj verziji Androida.")
+                    }
+                    returnToActiveNavApp(context)
                 } catch (e: Exception) {
                     onResult("Greška pri javljanju na poziv.")
                 }
@@ -78,8 +127,13 @@ object ActionExecutor {
             CommandAction.REJECT_CALL -> {
                 try {
                     val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-                    telecomManager.endCall()
-                    onResult("Poziv je odbijen.")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        telecomManager.endCall()
+                        onResult("Poziv je odbijen.")
+                    } else {
+                        onResult("Odbijanje poziva nije podržano na ovoj verziji Androida.")
+                    }
+                    returnToActiveNavApp(context)
                 } catch (e: Exception) {
                     onResult("Greška pri odbijanju poziva.")
                 }
@@ -98,8 +152,7 @@ object ActionExecutor {
             CommandAction.SEND_SOS -> {
                 try {
                     val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                    val loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                        ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    val loc = getBestLastKnownLocation(lm)
 
                     val sosText = if (loc != null) {
                         "Hitno! Potrebna pomoć na putu. Moja lokacija: https://maps.google.com/?q=${loc.latitude},${loc.longitude}"
@@ -109,9 +162,10 @@ object ActionExecutor {
 
                     val sosContactNumber = contact?.phoneNumber ?: contacts.firstOrNull()?.phoneNumber
                     if (sosContactNumber != null) {
-                        val smsManager = context.getSystemService(SmsManager::class.java)
+                        val smsManager = getSmsManager(context)
                         smsManager.sendTextMessage(sosContactNumber, null, sosText, null, null)
                         onResult("SOS poruka poslata sa trenutnim koordinatama.")
+                        returnToActiveNavApp(context)
                     } else {
                         onResult("Nije definisan SOS kontakt.")
                     }
@@ -123,8 +177,7 @@ object ActionExecutor {
             CommandAction.WHERE_AM_I -> {
                 try {
                     val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                    val loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                        ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    val loc = getBestLastKnownLocation(lm)
 
                     if (loc != null && Geocoder.isPresent()) {
                         val geocoder = Geocoder(context, Locale("sr", "RS"))
@@ -134,13 +187,21 @@ object ActionExecutor {
                         if (address != null) {
                             val locality = address.locality ?: address.subAdminArea ?: ""
                             val thoroughfare = address.thoroughfare ?: ""
-                            onResult("Nalazite se u mestu $locality, $thoroughfare.")
+                            val resText = if (locality.isNotBlank() || thoroughfare.isNotBlank()) {
+                                "Nalazite se u mestu $locality $thoroughfare".trim()
+                            } else {
+                                "Nalazite se na koordinatama: ${String.format(Locale.ROOT, "%.4f, %.4f", loc.latitude, loc.longitude)}."
+                            }
+                            onResult(resText)
                         } else {
-                            onResult("Nalazite se na koordinatama: ${loc.latitude}, ${loc.longitude}.")
+                            onResult("Nalazite se na koordinatama: ${String.format(Locale.ROOT, "%.4f, %.4f", loc.latitude, loc.longitude)}.")
                         }
+                    } else if (loc != null) {
+                        onResult("Nalazite se na koordinatama: ${String.format(Locale.ROOT, "%.4f, %.4f", loc.latitude, loc.longitude)}.")
                     } else {
                         onResult("Trenutna lokacija nije dostupna.")
                     }
+                    returnToActiveNavApp(context)
                 } catch (e: Exception) {
                     onResult("Ne mogu da odredim lokaciju.")
                 }
@@ -150,15 +211,12 @@ object ActionExecutor {
                 val timeFormat = SimpleDateFormat("HH 'sati i' mm 'minuta'", Locale("sr", "RS"))
                 val currentTime = timeFormat.format(Date())
                 onResult("Sada je $currentTime.")
+                returnToActiveNavApp(context)
             }
 
             else -> {
                 onResult("Akcija nije prepoznata.")
             }
         }
-    }
-
-    private fun String?.isNull_or_blank(): Boolean {
-        return this == null || this.trim().isEmpty()
     }
 }

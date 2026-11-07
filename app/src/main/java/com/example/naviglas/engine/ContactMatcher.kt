@@ -7,6 +7,7 @@ import java.util.Locale
 data class Contact(
     val name: String,
     val phoneNumber: String,
+    val phoneNumbers: List<String> = listOf(phoneNumber),
     val nickname: String? = null
 )
 
@@ -18,6 +19,7 @@ enum class ConfidenceLevel {
 
 data class ContactMatchResult(
     val contact: Contact?,
+    val multipleMatches: List<Contact> = emptyList(),
     val matchedName: String?,
     val confidence: ConfidenceLevel
 )
@@ -40,6 +42,32 @@ object ContactMatcher {
     )
 
     /**
+     * Pronalazi sve potencijalne mečeve za izgovoreno ime (ako postoji više kontakata sa istim imenom).
+     */
+    fun findAllMatches(
+        spokenName: String,
+        contacts: List<Contact>
+    ): List<Contact> {
+        val trimmed = spokenName.trim()
+        if (trimmed.isEmpty() || contacts.isEmpty()) return emptyList()
+
+        val lemmas = SerbianCaseLemmatizer.getCandidateLemmas(trimmed)
+        val matchedList = mutableListOf<Contact>()
+
+        for (lemma in lemmas) {
+            val normLemma = SerbianTextNormalizer.stripDiacritics(lemma).lowercase(Locale.ROOT)
+            val matches = contacts.filter {
+                val normName = SerbianTextNormalizer.stripDiacritics(it.name).lowercase(Locale.ROOT)
+                val firstName = normName.split(" ").firstOrNull() ?: ""
+                normName == normLemma || firstName == normLemma || normName.contains(normLemma)
+            }
+            matchedList.addAll(matches)
+        }
+
+        return matchedList.distinctBy { it.name }
+    }
+
+    /**
      * Pronalazi najbolji meč za izgovoreno ime u listi kontakata.
      */
     fun findBestMatch(
@@ -49,7 +77,18 @@ object ContactMatcher {
     ): ContactMatchResult {
         val trimmed = spokenName.trim()
         if (trimmed.isEmpty() || contacts.isEmpty()) {
-            return ContactMatchResult(null, null, ConfidenceLevel.LOW)
+            return ContactMatchResult(null, emptyList(), null, ConfidenceLevel.LOW)
+        }
+
+        val allMatches = findAllMatches(trimmed, contacts)
+        if (allMatches.size > 1) {
+            // Pronađeno je više kontakata sa istim imenom (npr. Marko Petrović i Marko Nikolić)
+            return ContactMatchResult(
+                contact = allMatches.first(),
+                multipleMatches = allMatches,
+                matchedName = trimmed,
+                confidence = ConfidenceLevel.MEDIUM
+            )
         }
 
         val lemmas = SerbianCaseLemmatizer.getCandidateLemmas(trimmed)
@@ -63,7 +102,7 @@ object ContactMatcher {
                     .contains(SerbianTextNormalizer.stripDiacritics(vipTarget).lowercase(Locale.ROOT))
             }
             if (vipMatch != null) {
-                return ContactMatchResult(vipMatch, vipMatch.name, ConfidenceLevel.HIGH)
+                return ContactMatchResult(vipMatch, emptyList(), vipMatch.name, ConfidenceLevel.HIGH)
             }
         }
 
@@ -76,7 +115,7 @@ object ContactMatcher {
                 SerbianTextNormalizer.stripDiacritics(it.name).lowercase(Locale.ROOT) == normLemma
             }
             if (exact != null) {
-                return ContactMatchResult(exact, exact.name, ConfidenceLevel.HIGH)
+                return ContactMatchResult(exact, emptyList(), exact.name, ConfidenceLevel.HIGH)
             }
 
             // Prva reč meč (npr. "Marko" u "Marko Petrović")
@@ -86,7 +125,7 @@ object ContactMatcher {
                 firstName == normLemma
             }
             if (firstWordMatch != null) {
-                return ContactMatchResult(firstWordMatch, firstWordMatch.name, ConfidenceLevel.HIGH)
+                return ContactMatchResult(firstWordMatch, emptyList(), firstWordMatch.name, ConfidenceLevel.HIGH)
             }
         }
 
@@ -97,7 +136,7 @@ object ContactMatcher {
                 SerbianTextNormalizer.stripDiacritics(it.name).lowercase(Locale.ROOT).contains(normLemma)
             }
             if (partial != null) {
-                return ContactMatchResult(partial, partial.name, ConfidenceLevel.MEDIUM)
+                return ContactMatchResult(partial, emptyList(), partial.name, ConfidenceLevel.MEDIUM)
             }
         }
 
@@ -118,17 +157,17 @@ object ContactMatcher {
         }
 
         if (bestFuzzyMatch != null) {
-            return ContactMatchResult(bestFuzzyMatch, bestFuzzyMatch.name, ConfidenceLevel.MEDIUM)
+            return ContactMatchResult(bestFuzzyMatch, emptyList(), bestFuzzyMatch.name, ConfidenceLevel.MEDIUM)
         }
 
-        return ContactMatchResult(null, trimmed, ConfidenceLevel.LOW)
+        return ContactMatchResult(null, emptyList(), trimmed, ConfidenceLevel.LOW)
     }
 
     /**
-     * Očitava kontakte iz telefona.
+     * Očitava kontakte iz telefona i grupisanje više brojeva po kontaktu.
      */
     fun loadContactsFromPhone(context: Context): List<Contact> {
-        val list = mutableListOf<Contact>()
+        val map = mutableMapOf<String, MutableList<String>>()
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -144,7 +183,10 @@ object ContactMatcher {
                     val name = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
                     val number = if (numberIndex >= 0) cursor.getString(numberIndex) else ""
                     if (name.isNotBlank() && number.isNotBlank()) {
-                        list.add(Contact(name, number))
+                        val cleanNum = number.replace(" ", "").replace("-", "")
+                        map.getOrPut(name) { mutableListOf() }.apply {
+                            if (!contains(cleanNum)) add(cleanNum)
+                        }
                     }
                 }
             }
@@ -152,7 +194,13 @@ object ContactMatcher {
             e.printStackTrace()
         }
 
-        return list.distinctBy { it.name }
+        return map.map { (name, numbers) ->
+            Contact(
+                name = name,
+                phoneNumber = numbers.first(),
+                phoneNumbers = numbers
+            )
+        }
     }
 
     private fun levenshteinDistance(s1: String, s2: String): Int {

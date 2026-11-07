@@ -2,8 +2,8 @@ package com.example.naviglas.engine
 
 /**
  * Normalizator teksta za srpski jezik (ekavica).
- * Pruža konverziju pisma (ćirilica -> latinica), uklanjanje dijakritika radi mečovanja,
- * i širenje skraćenica/brojeva u izgovorne reči za prirodan Text-To-Speech (TTS).
+ * Pruža konverziju pisma (ćirilica -> latinica i latinica -> ćirilica),
+ * uklanjanje dijakritika radi mečovanja, i širenje skraćenica/brojeva u izgovorne reči.
  */
 object SerbianTextNormalizer {
 
@@ -40,6 +40,36 @@ object SerbianTextNormalizer {
     }
 
     /**
+     * Konvertuje latinicu u ćirilicu za maksimalnu fonetsku prirodnost u Google TTS sintetičaru.
+     */
+    fun latinToCyrillic(text: String): String {
+        val t = text
+            .replace("lj", "љ").replace("Lj", "Љ").replace("LJ", "Љ")
+            .replace("nj", "њ").replace("Nj", "Њ").replace("NJ", "Њ")
+            .replace("dž", "џ").replace("Dž", "Џ").replace("DŽ", "Џ")
+            .replace("dj", "ђ").replace("Dj", "Ђ").replace("DJ", "Ђ")
+
+        val result = StringBuilder()
+        for (ch in t) {
+            val converted = when (ch) {
+                'a' -> 'а'; 'b' -> 'б'; 'v' -> 'в'; 'g' -> 'г'; 'd' -> 'д'; 'đ' -> 'ђ'
+                'e' -> 'е'; 'ž' -> 'ж'; 'z' -> 'з'; 'i' -> 'и'; 'j' -> 'ј'; 'k' -> 'к'
+                'l' -> 'л'; 'm' -> 'м'; 'n' -> 'н'; 'o' -> 'о'; 'p' -> 'п'; 'r' -> 'р'
+                's' -> 'с'; 't' -> 'т'; 'ć' -> 'ћ'; 'u' -> 'у'; 'f' -> 'ф'; 'h' -> 'х'
+                'c' -> 'ц'; 'č' -> 'ч'; 'š' -> 'ш'
+                'A' -> 'А'; 'B' -> 'Б'; 'V' -> 'В'; 'G' -> 'Г'; 'D' -> 'Д'; 'Đ' -> 'Ђ'
+                'E' -> 'Е'; 'Ž' -> 'Ж'; 'Z' -> 'З'; 'I' -> 'И'; 'J' -> 'Ј'; 'K' -> 'К'
+                'L' -> 'Л'; 'M' -> 'М'; 'N' -> 'Н'; 'O' -> 'О'; 'P' -> 'П'; 'R' -> 'Р'
+                'S' -> 'С'; 'T' -> 'Т'; 'Ć' -> 'Ћ'; 'U' -> 'У'; 'F' -> 'Ф'; 'H' -> 'Х'
+                'C' -> 'Ц'; 'Č' -> 'Ч'; 'Š' -> 'Ш'
+                else -> ch
+            }
+            result.append(converted)
+        }
+        return result.toString()
+    }
+
+    /**
      * Uklanja dijakritike (č, ć, š, ž, đ -> c, c, s, z, dj) radi fleksibilnog mečovanja imenika.
      */
     fun stripDiacritics(text: String): String {
@@ -69,6 +99,7 @@ object SerbianTextNormalizer {
             result = result.replace(Regex("\\b$num\\b"), word)
         }
 
-        return result
+        // Konvertujemo u ćirilicu za Google TTS jer Google sr-RS sintetizuje ćirilicu sa savršenom ljudskom intonacijom
+        return latinToCyrillic(result)
     }
 }

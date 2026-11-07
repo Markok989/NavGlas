@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.naviglas"
-        minSdk = 37
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"

@@ -39,14 +39,24 @@ class VoiceAssistantService : Service(), VoiceEngineCallback {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
 
+        // Obavezno pozivamo startForeground Notification ako servis već nije aktivan
+        if (!isServiceRunning && action != ACTION_STOP_SERVICE) {
+            startForegroundServiceNotification()
+            isServiceRunning = true
+        }
+
         when (action) {
             ACTION_START_SERVICE -> {
-                startForegroundServiceNotification()
-                isServiceRunning = true
+                // Već je osigurano startForeground
             }
 
             ACTION_STOP_SERVICE -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
                 stopSelf()
                 isServiceRunning = false
             }
@@ -58,7 +68,8 @@ class VoiceAssistantService : Service(), VoiceEngineCallback {
             ACTION_INCOMING_SMS -> {
                 val sender = intent.getStringExtra("EXTRA_SMS_SENDER") ?: "Nepoznati broj"
                 val body = intent.getStringExtra("EXTRA_SMS_BODY") ?: ""
-                val textToSpeak = "Stigla je nova poruka od $sender: $body"
+                voiceEngineManager.setLastReceivedSms(sender, body)
+                val textToSpeak = "Stigla je nova SMS poruka od $sender: $body. Ako želite da je čujete ponovo, izgovorite: Pročitaj poruku opet."
                 voiceEngineManager.speak(textToSpeak)
             }
 
@@ -99,14 +110,18 @@ class VoiceAssistantService : Service(), VoiceEngineCallback {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -124,7 +139,6 @@ class VoiceAssistantService : Service(), VoiceEngineCallback {
     override fun onError(errorMessage: String) {}
 
     override fun onDestroy() {
-
         voiceEngineManager.destroy()
         super.onDestroy()
     }

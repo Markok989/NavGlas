@@ -3,6 +3,7 @@ package com.example.naviglas.ui
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.provider.Settings
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -18,8 +19,9 @@ class OverlayVoiceWidget(private val context: Context, private val onWidgetClick
     /**
      * Prikazuje lebdeći mehur (Overlay Widget) preko Google Maps-a.
      */
-    fun showOverlay(statusText: String = "NaviGlas") {
+    fun showOverlay(statusText: String = "NaviGlas", alpha: Float = 1.0f) {
         if (overlayView != null) return
+        if (!Settings.canDrawOverlays(context)) return
 
         val layoutParamsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -44,6 +46,7 @@ class OverlayVoiceWidget(private val context: Context, private val onWidgetClick
         val inflater = LayoutInflater.from(context)
         overlayView = inflater.inflate(R.layout.overlay_widget_layout, null).apply {
             findViewById<TextView>(R.id.tvOverlayStatus)?.text = statusText
+            this.alpha = alpha.coerceIn(0.3f, 1.0f)
             setOnClickListener {
                 onWidgetClick()
             }
@@ -58,6 +61,10 @@ class OverlayVoiceWidget(private val context: Context, private val onWidgetClick
 
     fun updateStatus(statusText: String) {
         overlayView?.findViewById<TextView>(R.id.tvOverlayStatus)?.text = statusText
+    }
+
+    fun updateAlpha(alpha: Float) {
+        overlayView?.alpha = alpha.coerceIn(0.3f, 1.0f)
     }
 
     fun hideOverlay() {

@@ -60,6 +60,17 @@ class AudioRoutingManager(private val context: Context) {
     }
 
     /**
+     * Privremeno utišava zvono telefona tokom dolaznog poziva.
+     */
+    fun silenceRingtone() {
+        try {
+            audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
      * Pokreće Bluetooth SCO kanal ili pali spikerfon u zavisnosti od dostupnosti uređaja u autu.
      */
     fun enableCarAudioMode(preferBluetooth: Boolean = true) {

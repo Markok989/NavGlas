@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.example.naviglas.service.VoiceAssistantService
 
 class BluetoothConnectReceiver : BroadcastReceiver() {
@@ -15,14 +16,22 @@ class BluetoothConnectReceiver : BroadcastReceiver() {
                 val serviceIntent = Intent(context, VoiceAssistantService::class.java).apply {
                     this.action = VoiceAssistantService.ACTION_START_SERVICE
                 }
-                context.startForegroundService(serviceIntent)
+                try {
+                    ContextCompat.startForegroundService(context, serviceIntent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
             BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                 val serviceIntent = Intent(context, VoiceAssistantService::class.java).apply {
                     this.action = VoiceAssistantService.ACTION_STOP_SERVICE
                 }
-                context.startService(serviceIntent)
+                try {
+                    context.stopService(serviceIntent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
